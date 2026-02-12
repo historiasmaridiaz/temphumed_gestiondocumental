@@ -492,9 +492,9 @@ function openGoogleSheetsForPDF() {
         button.innerHTML = '⏳ Abriendo Google Sheets...';
         
         // Configuración
-        const spreadsheetId = '1YRAztDSETnV5GcsPhtfrvKM-8k922XxzUcLHiLHwBcI';
+        const spreadsheetId = '1qraItHZYo4jxLjwf1su9hOxu9OSLhi0mUSY8A3EcB94';
         const gid = '9685068'; // GRAFICO_FORMATO
-        
+            
         // URL de Google Sheets
         const sheetsUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${gid}`;
         
