@@ -6,7 +6,7 @@
 
 // ⚠️ REEMPLAZA ESTA URL CON LA TUYA
 // Ejemplo: 'https://script.google.com/macros/s/AKfycbxxx.../exec'
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwIVYYctzT0fUc2ozRpEtuZV0RaUtu-B3zCezUBokoZu4XsqnpXg3YAz3jfPCRC7SkXTA/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWLRkiL_dtiisVhpknEBwTqq_C7s4Wnol18KN7KvmL5B_8TyTJdTsNj0Dgno7PzkpIUg/exec';
 
 
 // ═══════════════════════════════════════════════════════════════════
@@ -18,7 +18,7 @@ const CONFIG = {
     SCRIPT_URL: APPS_SCRIPT_URL,  // Usa la URL definida arriba
     
     // ID de la hoja de cálculo
-    SPREADSHEET_ID: '1YRAztDSETnV5GcsPhtfrvKM-8k922XxzUcLHiLHwBcI',
+    SPREADSHEET_ID: '1qraItHZYo4jxLjwf1su9hOxu9OSLhi0mUSY8A3EcB94',
     
     // Intervalo de actualización automática (milisegundos)
     REFRESH_INTERVAL: 60000, // 60 segundos
@@ -63,7 +63,7 @@ if (APPS_SCRIPT_URL &&
 const SYSTEM_CONFIG = {
     name: 'Sistema de Control de Temperatura y Humedad',
     version: '1.0.1', // Actualizada
-    spreadsheetId: '1YRAztDSETnV5GcsPhtfrvKM-8k922XxzUcLHiLHwBcI',
+    spreadsheetId: '1qraItHZYo4jxLjwf1su9hOxu9OSLhi0mUSY8A3EcB94',
     author: 'Sistema automatizado',
     lastUpdate: '2025-12-17' // Actualizada
 };
