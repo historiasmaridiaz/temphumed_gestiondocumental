@@ -191,8 +191,10 @@ async function loadChartData() {
             
             const temperatures = recentData.map(item => parseFloat(item.temperatura));
             const humidities = recentData.map(item => {
-                const hum = String(item.humedad).replace('%', '');
-                return parseFloat(hum);
+                let hum = parseFloat(String(item.humedad).replace('%', '').trim());
+                // Si viene como decimal 0.56 → convertir a 56
+                if (!isNaN(hum) && hum > 0 && hum < 1) hum = Math.round(hum * 100);
+                return Math.round(hum) || 0;
             });
             
             const tempMax = Math.max(...temperatures);
