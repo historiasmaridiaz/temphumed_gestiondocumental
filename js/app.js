@@ -1,9 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════
 //  SISTEMA DE CONTROL DE TEMPERATURA Y HUMEDAD
 //  JavaScript Principal - CRUD Operations
-//  Versión: 1.0.0
+//  Versión: 1.1.0
 // ═══════════════════════════════════════════════════════════════════
-
 
 // Variables globales
 let SCRIPT_URL = '';
@@ -11,7 +10,6 @@ let currentData = [];
 let historyStack = [];
 let redoStack = [];
 const MAX_HISTORY = 200;
-
 
 // Inicialización
 document.addEventListener('DOMContentLoaded', function() {
@@ -35,13 +33,11 @@ document.addEventListener('DOMContentLoaded', function() {
     setInterval(loadData, 300000);
 });
 
-
 // Mostrar sección de configuración
 function showConfigSection() {
     document.getElementById('config-section').style.display = 'block';
     document.getElementById('main-content').style.display = 'none';
 }
-
 
 // Mostrar contenido principal
 function showMainContent() {
@@ -49,70 +45,63 @@ function showMainContent() {
     document.getElementById('main-content').style.display = 'flex';
 }
 
-
 // Guardar configuración
 function saveConfiguration() {
     const url = document.getElementById('script-url-input').value.trim();
-    
+
     if (!url) {
         showAlert('Por favor ingrese una URL válida', 'warning');
         return;
     }
-    
+
     if (!url.includes('script.google.com') || !url.includes('/exec')) {
         showAlert('La URL debe ser de Google Apps Script y terminar en /exec', 'error');
         return;
     }
-    
+
     localStorage.setItem('scriptUrl', url);
     SCRIPT_URL = url;
-    
+
     showAlert('Configuración guardada exitosamente', 'success');
-    
+
     setTimeout(() => {
         showMainContent();
         loadData();
     }, 1000);
 }
 
-
 // Cargar datos
 async function loadData() {
     showLoading(true);
-    
+
     try {
         const result = await callAppsScript('getData');
-        
+
         if (result.success) {
-                currentData = result.data;
-                renderTable(currentData);
-                populateHCSelect();  // ← AGREGAR ESTA LÍNEA
-                showAlert(`${currentData.length} registros cargados`, 'success');
-                }
-        else {
-                    showAlert('Error al cargar datos: ' + result.message, 'error');
-                }
-            } catch (error) {
-                showAlert('Error de conexión: ' + error.message, 'error');
-                console.error(error);
-            } finally {
-                showLoading(false);
-            }
+            currentData = result.data;
+            renderTable(currentData);
+            populateHCSelect();
+            showAlert(`${currentData.length} registros cargados`, 'success');
+        } else {
+            showAlert('Error al cargar datos: ' + result.message, 'error');
+        }
+    } catch (error) {
+        showAlert('Error de conexión: ' + error.message, 'error');
+        console.error(error);
+    } finally {
+        showLoading(false);
+    }
 }
-
-
-
 
 // Formatear fecha para mostrar
 function formatDisplayDate(dateStr) {
     if (!dateStr) return '';
     const date = new Date(dateStr);
-    const day = String(date.getDate()).padStart(2, '0');
+    const day   = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
+    const year  = date.getFullYear();
     return `${day}/${month}/${year}`;
 }
-
 
 // Abrir modal para agregar
 function openAddModal() {
@@ -120,23 +109,27 @@ function openAddModal() {
     document.getElementById('data-form').reset();
     document.getElementById('record-id').value = '';
 
-    // Retomar última HC seleccionada
-  // Avanzar al siguiente HC en la secuencia
-    // Avanzar al siguiente HC en la secuencia
+    const now = new Date(); // ← DECLARADO AQUÍ, una sola vez
+
+    // Fecha y hora actuales
+    document.getElementById('fecha').value = now.toISOString().split('T')[0];
+    document.getElementById('hora').value  = now.toTimeString().slice(0, 5);
+
+    // ── Secuencia HC ──────────────────────────────────────────────
     const lastHC = localStorage.getItem('lastSelectedHC') || '';
     const select = document.getElementById('no_hc');
 
     if (lastHC) {
-        const options = Array.from(select.options).map(o => o.value).filter(v => v);
+        const options   = Array.from(select.options).map(o => o.value).filter(v => v);
         const lastIndex = options.indexOf(lastHC);
-        const nextHC = lastIndex >= 0 && lastIndex < options.length - 1
+        const nextHC    = (lastIndex >= 0 && lastIndex < options.length - 1)
             ? options[lastIndex + 1]
             : lastHC; // Si ya es el último, queda igual
         select.value = nextHC;
     }
-    
-  // Secuencia día + jornada:
-    // Día 13 MAÑANA → Día 13 TARDE → Día 14 MAÑANA → Día 14 TARDE ...
+
+    // ── Secuencia Día + Jornada ───────────────────────────────────
+    // Lógica: Día 13 MAÑANA → Día 13 TARDE → Día 14 MAÑANA → ...
     const lastDia     = parseInt(localStorage.getItem('lastDia')) || now.getDate();
     const lastJornada = localStorage.getItem('lastJornada') || '';
 
@@ -144,81 +137,83 @@ function openAddModal() {
     let nextJornada = 'MAÑANA';
 
     if (lastJornada === 'MAÑANA') {
-        // Después de MAÑANA → mismo día, TARDE
+        // Mismo día, siguiente jornada TARDE
         nextDia     = lastDia;
         nextJornada = 'TARDE';
     } else if (lastJornada === 'TARDE') {
-        // Después de TARDE → día siguiente, MAÑANA
+        // Siguiente día, vuelve a MAÑANA
         nextDia = lastDia + 1;
         const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
         if (nextDia > lastDayOfMonth) nextDia = 1;
         nextJornada = 'MAÑANA';
     }
 
-    document.getElementById('dia').value    = nextDia;
+    document.getElementById('dia').value     = nextDia;
     document.getElementById('jornada').value = nextJornada;
-    
+
     openModal();
 }
-
 
 // Editar registro
 function editRecord(id) {
     const record = currentData.find(r => r.id === id);
     if (!record) return;
-    
-    document.getElementById('modal-title').textContent = 'Editar Registro';
-    document.getElementById('record-id').value = record.id;
-    document.getElementById('no_hc').value = record.no_hc || '';           // ← NUEVO
-    document.getElementById('fecha').value = record.fecha;
-    document.getElementById('hora').value = record.hora;
-    document.getElementById('jornada').value = record.jornada || '';
-    document.getElementById('dia').value = record.dia;
-    document.getElementById('temperatura').value = record.temperatura;
+
+    document.getElementById('modal-title').textContent     = 'Editar Registro';
+    document.getElementById('record-id').value             = record.id;
+    document.getElementById('no_hc').value                 = record.no_hc || '';
+    document.getElementById('fecha').value                 = record.fecha;
+    document.getElementById('hora').value                  = record.hora;
+    document.getElementById('jornada').value               = record.jornada || '';
+    document.getElementById('dia').value                   = record.dia;
+    document.getElementById('temperatura').value           = record.temperatura;
+
     // Limpiar humedad: si viene como 0.56 convertir a 56
     let humVal = parseFloat(String(record.humedad).replace('%', '').trim());
     if (!isNaN(humVal) && humVal > 0 && humVal < 1) humVal = Math.round(humVal * 100);
     document.getElementById('humedad').value = Math.round(humVal) || 0;
-    document.getElementById('persona').value = record.persona;
-    document.getElementById('observaciones').value = record.observaciones || '';
-    
+
+    document.getElementById('persona').value               = record.persona;
+    document.getElementById('observaciones').value         = record.observaciones || '';
+
     openModal();
 }
-
 
 // Guardar datos (crear o actualizar)
 async function saveData(event) {
     event.preventDefault();
-    
-    const selectedHC     = document.getElementById('no_hc').value;
-    const selectedDia    = document.getElementById('dia').value;
-    const selectedJornada= document.getElementById('jornada').value;
 
+    const selectedHC      = document.getElementById('no_hc').value;
+    const selectedDia     = document.getElementById('dia').value;
+    const selectedJornada = document.getElementById('jornada').value;
+
+    // Guardar secuencia para el próximo registro
     if (selectedHC)      localStorage.setItem('lastSelectedHC', selectedHC);
     if (selectedDia)     localStorage.setItem('lastDia',        selectedDia);
     if (selectedJornada) localStorage.setItem('lastJornada',    selectedJornada);
 
     const recordData = {
-        id: document.getElementById('record-id').value,
-        no_hc: selectedHC,                        // ← NUEVO
-        fecha: document.getElementById('fecha').value,
-        hora: document.getElementById('hora').value,
-        jornada: document.getElementById('jornada').value,
-        dia: document.getElementById('dia').value,
-        temperatura: document.getElementById('temperatura').value,
-        humedad: document.getElementById('humedad').value,
-        persona: document.getElementById('persona').value,
+        id:            document.getElementById('record-id').value,
+        no_hc:         selectedHC,
+        fecha:         document.getElementById('fecha').value,
+        hora:          document.getElementById('hora').value,
+        jornada:       selectedJornada,
+        dia:           selectedDia,
+        temperatura:   document.getElementById('temperatura').value,
+        humedad:       document.getElementById('humedad').value,
+        persona:       document.getElementById('persona').value,
         observaciones: document.getElementById('observaciones').value
     };
-    
-// Spinner en botón guardar
-    const saveBtn = document.querySelector('#data-form button[type="submit"]');
+
+    // Spinner en botón guardar
+    const saveBtn       = document.querySelector('#data-form button[type="submit"]');
     const originalBtnText = saveBtn.innerHTML;
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = `
+    saveBtn.disabled    = true;
+    saveBtn.innerHTML   = `
         <span style="display:inline-flex;align-items:center;gap:8px;">
             <svg style="animation:spin 1s linear infinite;width:18px;height:18px;" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
             </svg>
             Guardando...
         </span>`;
@@ -231,12 +226,15 @@ async function saveData(event) {
 
         if (result.success) {
             saveToHistory({
-                action: recordData.id ? 'update' : 'create',
-                data: recordData,
+                action:    recordData.id ? 'update' : 'create',
+                data:      recordData,
                 timestamp: new Date().toISOString()
             });
 
-            showAlert(recordData.id ? 'Registro actualizado exitosamente' : 'Registro creado exitosamente', 'success');
+            showAlert(
+                recordData.id ? 'Registro actualizado exitosamente' : 'Registro creado exitosamente',
+                'success'
+            );
             closeModal();
             loadData();
         } else {
@@ -245,33 +243,29 @@ async function saveData(event) {
     } catch (error) {
         showAlert('Error: ' + error.message, 'error');
     } finally {
-        saveBtn.disabled = false;
+        saveBtn.disabled  = false;
         saveBtn.innerHTML = originalBtnText;
         showLoading(false);
     }
 }
 
-
 // Eliminar registro
 async function deleteRecord(id) {
-    if (!confirm('¿Está seguro de eliminar este registro?')) {
-        return;
-    }
-    
+    if (!confirm('¿Está seguro de eliminar este registro?')) return;
+
     showLoading(true);
-    
+
     try {
         const record = currentData.find(r => r.id === id);
         const result = await callAppsScript('deleteData', { id: id });
-        
+
         if (result.success) {
-            // Guardar en historial
             saveToHistory({
-                action: 'delete',
-                data: record,
+                action:    'delete',
+                data:      record,
                 timestamp: new Date().toISOString()
             });
-            
+
             showAlert('Registro eliminado exitosamente', 'success');
             loadData();
         } else {
@@ -284,42 +278,35 @@ async function deleteRecord(id) {
     }
 }
 
-
 // Llamar a Apps Script
 async function callAppsScript(action, data = {}) {
     if (!SCRIPT_URL) {
         throw new Error('URL de Apps Script no configurada');
     }
-    
-    const params = new URLSearchParams({
-        action: action,
-        ...data
-    });
-    
+
+    const params = new URLSearchParams({ action: action, ...data });
+
     const response = await fetch(`${SCRIPT_URL}?${params}`, {
-        method: 'GET',
+        method:   'GET',
         redirect: 'follow'
     });
-    
+
     if (!response.ok) {
         throw new Error('Error en la petición: ' + response.status);
     }
-    
+
     return await response.json();
 }
-
 
 // Gestión de Modales
 function openModal() {
     document.getElementById('data-modal').classList.add('active');
 }
 
-
 function closeModal() {
     document.getElementById('data-modal').classList.remove('active');
     document.getElementById('data-form').reset();
 }
-
 
 // Historial de cambios
 function saveToHistory(change) {
@@ -331,25 +318,22 @@ function saveToHistory(change) {
     historyStack = historyStack.filter(c => new Date(c.timestamp) >= hace2Dias);
 
     // Límite adicional por seguridad
-    if (historyStack.length > MAX_HISTORY) {
-        historyStack.shift();
-    }
+    if (historyStack.length > MAX_HISTORY) historyStack.shift();
 
     redoStack = [];
     localStorage.setItem('changeHistory', JSON.stringify(historyStack));
 }
 
-
 function showHistory() {
     const history = JSON.parse(localStorage.getItem('changeHistory') || '[]');
-    
+
     if (history.length === 0) {
         showAlert('No hay cambios en el historial', 'info');
         return;
     }
-    
+
     const historyList = document.getElementById('history-list');
-    historyList.innerHTML = history.slice().reverse().map((change, index) => `
+    historyList.innerHTML = history.slice().reverse().map((change) => `
         <div class="accordion">
             <div class="accordion-header">
                 <div>
@@ -362,8 +346,11 @@ function showHistory() {
             <div class="accordion-content">
                 <div style="padding: 15px; background: white;">
                     <p><strong>ID:</strong> ${change.data.id || 'N/A'}</p>
+                    <p><strong>No. HC:</strong> ${change.data.no_hc || 'N/A'}</p>
                     <p><strong>Fecha:</strong> ${change.data.fecha}</p>
                     <p><strong>Hora:</strong> ${change.data.hora}</p>
+                    <p><strong>Jornada:</strong> ${change.data.jornada}</p>
+                    <p><strong>Día:</strong> ${change.data.dia}</p>
                     <p><strong>Temperatura:</strong> ${change.data.temperatura}°C</p>
                     <p><strong>Humedad:</strong> ${change.data.humedad}%</p>
                     <p><strong>Persona:</strong> ${change.data.persona}</p>
@@ -371,47 +358,40 @@ function showHistory() {
             </div>
         </div>
     `).join('');
-    
-    // Agregar funcionalidad de acordeón
+
+    // Acordeón
     document.querySelectorAll('.accordion-header').forEach(header => {
         header.addEventListener('click', function() {
-            const content = this.nextElementSibling;
-            content.classList.toggle('active');
+            this.nextElementSibling.classList.toggle('active');
         });
     });
-    
+
     document.getElementById('history-modal').classList.add('active');
 }
-
 
 function closeHistoryModal() {
     document.getElementById('history-modal').classList.remove('active');
 }
-
 
 async function undoLastChange() {
     if (historyStack.length === 0) {
         showAlert('No hay cambios para deshacer', 'warning');
         return;
     }
-    
+
     const lastChange = historyStack.pop();
     redoStack.push(lastChange);
-    
     showLoading(true);
-    
+
     try {
         if (lastChange.action === 'create') {
-            // Deshacer creación = eliminar
             await callAppsScript('deleteData', { id: lastChange.data.id });
         } else if (lastChange.action === 'delete') {
-            // Deshacer eliminación = crear
             await callAppsScript('createData', lastChange.data);
         } else if (lastChange.action === 'update') {
-            // Deshacer actualización = restaurar versión anterior
             await callAppsScript('updateData', lastChange.data);
         }
-        
+
         showAlert('Cambio deshecho exitosamente', 'success');
         localStorage.setItem('changeHistory', JSON.stringify(historyStack));
         loadData();
@@ -425,18 +405,16 @@ async function undoLastChange() {
     }
 }
 
-
 async function redoLastChange() {
     if (redoStack.length === 0) {
         showAlert('No hay cambios para rehacer', 'warning');
         return;
     }
-    
+
     const change = redoStack.pop();
     historyStack.push(change);
-    
     showLoading(true);
-    
+
     try {
         if (change.action === 'create') {
             await callAppsScript('createData', change.data);
@@ -445,7 +423,7 @@ async function redoLastChange() {
         } else if (change.action === 'update') {
             await callAppsScript('updateData', change.data);
         }
-        
+
         showAlert('Cambio rehecho exitosamente', 'success');
         localStorage.setItem('changeHistory', JSON.stringify(historyStack));
         loadData();
@@ -459,59 +437,51 @@ async function redoLastChange() {
     }
 }
 
-
 // UI Helpers
 function showLoading(show) {
-    document.getElementById('loading').style.display = show ? 'block' : 'none';
-    document.getElementById('table-container').style.display = show ? 'none' : 'block';
+    document.getElementById('loading').style.display           = show ? 'block' : 'none';
+    document.getElementById('table-container').style.display   = show ? 'none'  : 'block';
 }
-
 
 function showAlert(message, type = 'info') {
     const alertContainer = document.getElementById('alert-container');
-    
+
     const alert = document.createElement('div');
     alert.className = `alert alert-${type}`;
     alert.innerHTML = `
         <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
         </svg>
         <div>
             <p style="font-weight: 600;">${type.charAt(0).toUpperCase() + type.slice(1)}</p>
             <p>${message}</p>
         </div>
     `;
-    
+
     alertContainer.appendChild(alert);
-    
+
     setTimeout(() => {
         alert.style.animation = 'fadeOut 0.5s';
         setTimeout(() => alert.remove(), 500);
     }, 3000);
 }
 
-
 // Cerrar modal al hacer clic fuera
 window.onclick = function(event) {
-    const modals = document.querySelectorAll('.modal');
-    modals.forEach(modal => {
-        if (event.target === modal) {
-            modal.classList.remove('active');
-        }
+    document.querySelectorAll('.modal').forEach(modal => {
+        if (event.target === modal) modal.classList.remove('active');
     });
-}
+};
 
-
-// Atajo de teclado para cerrar modales (ESC)
+// Atajo de teclado ESC
 document.addEventListener('keydown', function(event) {
     if (event.key === 'Escape') {
-        document.querySelectorAll('.modal').forEach(modal => {
-            modal.classList.remove('active');
-        });
+        document.querySelectorAll('.modal').forEach(modal => modal.classList.remove('active'));
     }
 });
 
-// === 1. LISTA HC DESDE DATOS REALES ===
+// === LISTA HC ===
 function populateHCSelect() {
     const select = document.getElementById('no_hc');
     if (!select) return;
@@ -522,7 +492,7 @@ function populateHCSelect() {
         baseList.push(`HC-${i.toString().padStart(2, '0')}`);
     }
 
-    // Agregar los que existan en datos reales pero no estén en la base
+    // Agregar extras de datos reales
     if (currentData.length > 0) {
         const extras = currentData
             .map(r => r.no_hc)
@@ -535,31 +505,32 @@ function populateHCSelect() {
     select.innerHTML = '<option value="">-- Seleccione HC --</option>' +
         baseList.map(hc => `<option value="${hc}">${hc}</option>`).join('');
 }
-// === 2. RENDER TABLE CON HUMEDAD FIJA ===
+
+// === RENDER TABLE ===
 function renderTable(data) {
     const tbody = document.getElementById('data-tbody');
-    
+
     if (!data || data.length === 0) {
         tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; padding: 40px;">No hay datos disponibles</td></tr>';
         document.getElementById('table-container').style.display = 'block';
         return;
     }
-    
+
     tbody.innerHTML = data.map(record => {
-        // LIMPIAR HUMEDAD
+        // Limpiar humedad
         let hRaw = String(record.humedad || '0').replace('%', '').trim();
         let hNum = parseFloat(hRaw);
         if (!isNaN(hNum) && hNum > 0 && hNum < 1) hNum = Math.round(hNum * 100);
         hNum = Math.round(hNum) || 0;
-        
-        // LIMPIAR TEMPERATURA
+
+        // Limpiar temperatura
         let tRaw = String(record.temperatura || '0').split('°')[0].trim();
         let tNum = parseFloat(tRaw) || 0;
-        
+
         return `
             <tr>
                 <td class="hide-column">${record.id}</td>
-                <td style="font-weight: bold; color: var(--primary);">${record.no_hc || '-'}</td>
+                <td style="font-weight:bold; color:var(--primary);">${record.no_hc || '-'}</td>
                 <td>${formatDisplayDate(record.fecha)}</td>
                 <td>${record.hora}</td>
                 <td><span class="badge badge-${record.jornada === 'MAÑANA' ? 'info' : 'success'}">${record.jornada}</span></td>
@@ -569,34 +540,34 @@ function renderTable(data) {
                 <td>${record.persona}</td>
                 <td>${record.observaciones || '-'}</td>
                 <td>
-                    <div class="button-group" style="gap: 5px;">
+                    <div class="button-group" style="gap:5px;">
                         <button class="btn btn-primary" onclick="editRecord(${record.id})">✏️</button>
-                        <button class="btn btn-danger" onclick="deleteRecord(${record.id})">🗑️</button>
+                        <button class="btn btn-danger"  onclick="deleteRecord(${record.id})">🗑️</button>
                     </div>
                 </td>
-            </tr>
-        `;
+            </tr>`;
     }).join('');
+
     document.getElementById('table-container').style.display = 'block';
 }
 
-// === 3. EDICIÓN MASIVA ===
+// === EDICIÓN MASIVA ===
 let isBulkEditing = false;
 
 function toggleBulkEdit() {
     isBulkEditing = !isBulkEditing;
-    const btn = document.getElementById('btn-bulk-edit');
+    const btn     = document.getElementById('btn-bulk-edit');
     const saveBtn = document.getElementById('btn-save-bulk');
-    
+
     if (isBulkEditing) {
-        btn.innerHTML = '❌ Cancelar';
-        btn.className = 'btn btn-danger';
+        btn.innerHTML    = '❌ Cancelar';
+        btn.className    = 'btn btn-danger';
         saveBtn.style.display = 'inline-block';
         enableInlineEditing();
     } else {
         saveBulkChanges();
-        btn.innerHTML = '✏️ Edición Masiva';
-        btn.className = 'btn btn-warning';
+        btn.innerHTML    = '✏️ Edición Masiva';
+        btn.className    = 'btn btn-warning';
         saveBtn.style.display = 'none';
     }
 }
@@ -606,13 +577,13 @@ function enableInlineEditing() {
     rows.forEach(row => {
         const id = row.cells[0].textContent.trim();
         if (!id) return;
-        
-        const cells = Array.from(row.cells).slice(1, -1); // Excluye ID y Acciones
+
+        const cells = Array.from(row.cells).slice(1, -1);
         cells.forEach((cell, idx) => {
             let value = cell.textContent.replace('°C', '').replace('%', '').trim();
             if (value === '-') value = '';
-            
-            if (idx === 8) { // Observaciones
+
+            if (idx === 8) {
                 cell.innerHTML = `<textarea class="bulk-input" rows="1">${value}</textarea>`;
             } else {
                 cell.innerHTML = `<input type="text" class="bulk-input" value="${value}">`;
@@ -623,37 +594,36 @@ function enableInlineEditing() {
 
 async function saveBulkChanges() {
     showLoading(true);
-    const rows = document.querySelectorAll('#data-tbody tr');
+    const rows    = document.querySelectorAll('#data-tbody tr');
     const updates = [];
-    
+
     rows.forEach(row => {
         const id = row.cells[0].textContent.trim();
         if (!id) return;
-        
+
         const inputs = row.querySelectorAll('.bulk-input');
         if (inputs.length === 0) return;
-        
-        // HUMEDAD CORRECTA
+
         let humRaw = inputs[6]?.value?.replace('%', '').trim() || '0';
         let humNum = parseFloat(humRaw);
         if (!isNaN(humNum) && humNum > 0 && humNum < 1) humNum *= 100;
         humNum = Math.round(humNum) || 0;
-        
+
         const record = {
-            id: id,
-            no_hc: inputs[0]?.value || '',
-            fecha: inputs[1]?.value || '',
-            hora: inputs[2]?.value || '',
-            jornada: inputs[3]?.value || '',
-            dia: inputs[4]?.value || '',
-            temperatura: parseFloat(inputs[5]?.value) || 0,
-            humedad: humNum,
-            persona: inputs[7]?.value || '',
+            id:            id,
+            no_hc:         inputs[0]?.value || '',
+            fecha:         inputs[1]?.value || '',
+            hora:          inputs[2]?.value || '',
+            jornada:       inputs[3]?.value || '',
+            dia:           inputs[4]?.value || '',
+            temperatura:   parseFloat(inputs[5]?.value) || 0,
+            humedad:       humNum,
+            persona:       inputs[7]?.value || '',
             observaciones: inputs[8]?.value || ''
         };
         updates.push(callAppsScript('updateData', record));
     });
-    
+
     try {
         if (updates.length > 0) await Promise.all(updates);
         showAlert('✅ Cambios masivos guardados', 'success');
@@ -662,38 +632,35 @@ async function saveBulkChanges() {
         showAlert('Error: ' + error.message, 'error');
     } finally {
         isBulkEditing = false;
-        document.getElementById('btn-bulk-edit').innerHTML = '✏️ Edición Masiva';
-        document.getElementById('btn-bulk-edit').className = 'btn btn-warning';
+        document.getElementById('btn-bulk-edit').innerHTML    = '✏️ Edición Masiva';
+        document.getElementById('btn-bulk-edit').className    = 'btn btn-warning';
         document.getElementById('btn-save-bulk').style.display = 'none';
         showLoading(false);
     }
 }
 
-
-// Ordenar tabla por columna
+// === ORDENAR TABLA ===
 let sortColumn = '';
-let sortAsc = true;
+let sortAsc    = true;
 
 function sortTable(column) {
     if (sortColumn === column) {
         sortAsc = !sortAsc;
     } else {
         sortColumn = column;
-        sortAsc = true;
+        sortAsc    = true;
     }
 
     const sorted = [...currentData].sort((a, b) => {
         let valA = a[column] ?? '';
         let valB = b[column] ?? '';
 
-        // Numérico para temperatura, humedad, dia
         if (['temperatura', 'humedad', 'dia'].includes(column)) {
             valA = parseFloat(String(valA).replace('%', '')) || 0;
             valB = parseFloat(String(valB).replace('%', '')) || 0;
             return sortAsc ? valA - valB : valB - valA;
         }
 
-        // Texto
         return sortAsc
             ? String(valA).localeCompare(String(valB), 'es')
             : String(valB).localeCompare(String(valA), 'es');
@@ -702,21 +669,19 @@ function sortTable(column) {
     renderTable(sorted);
 }
 
-
-
 // Exportar funciones globales
-window.saveConfiguration = saveConfiguration;
-window.loadData = loadData;
-window.openAddModal = openAddModal;
-window.editRecord = editRecord;
-window.deleteRecord = deleteRecord;
-window.saveData = saveData;
-window.closeModal = closeModal;
-window.showHistory = showHistory;
-window.closeHistoryModal = closeHistoryModal;
-window.undoLastChange = undoLastChange;
-window.redoLastChange = redoLastChange;
-window.toggleBulkEdit = toggleBulkEdit;
-window.saveBulkChanges = saveBulkChanges;
-window.populateHCSelect = populateHCSelect;
-window.sortTable = sortTable;
+window.saveConfiguration  = saveConfiguration;
+window.loadData           = loadData;
+window.openAddModal       = openAddModal;
+window.editRecord         = editRecord;
+window.deleteRecord       = deleteRecord;
+window.saveData           = saveData;
+window.closeModal         = closeModal;
+window.showHistory        = showHistory;
+window.closeHistoryModal  = closeHistoryModal;
+window.undoLastChange     = undoLastChange;
+window.redoLastChange     = redoLastChange;
+window.toggleBulkEdit     = toggleBulkEdit;
+window.saveBulkChanges    = saveBulkChanges;
+window.populateHCSelect   = populateHCSelect;
+window.sortTable          = sortTable;
