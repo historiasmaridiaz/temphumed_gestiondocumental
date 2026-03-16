@@ -135,15 +135,28 @@ function openAddModal() {
         select.value = nextHC;
     }
     
-    // Establecer fecha y hora actuales
-    const now = new Date();
-    document.getElementById('fecha').value = now.toISOString().split('T')[0];
-    document.getElementById('hora').value = now.toTimeString().slice(0, 5);
-    document.getElementById('dia').value = now.getDate();
-    
-    // Determinar jornada automáticamente
-    const hour = now.getHours();
-    document.getElementById('jornada').value = hour < 14 ? 'MAÑANA' : 'TARDE';
+  // Secuencia día + jornada:
+    // Día 13 MAÑANA → Día 13 TARDE → Día 14 MAÑANA → Día 14 TARDE ...
+    const lastDia     = parseInt(localStorage.getItem('lastDia')) || now.getDate();
+    const lastJornada = localStorage.getItem('lastJornada') || '';
+
+    let nextDia     = lastDia;
+    let nextJornada = 'MAÑANA';
+
+    if (lastJornada === 'MAÑANA') {
+        // Después de MAÑANA → mismo día, TARDE
+        nextDia     = lastDia;
+        nextJornada = 'TARDE';
+    } else if (lastJornada === 'TARDE') {
+        // Después de TARDE → día siguiente, MAÑANA
+        nextDia = lastDia + 1;
+        const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        if (nextDia > lastDayOfMonth) nextDia = 1;
+        nextJornada = 'MAÑANA';
+    }
+
+    document.getElementById('dia').value    = nextDia;
+    document.getElementById('jornada').value = nextJornada;
     
     openModal();
 }
@@ -177,8 +190,13 @@ function editRecord(id) {
 async function saveData(event) {
     event.preventDefault();
     
-    const selectedHC = document.getElementById('no_hc').value;
-    if (selectedHC) localStorage.setItem('lastSelectedHC', selectedHC);
+    const selectedHC     = document.getElementById('no_hc').value;
+    const selectedDia    = document.getElementById('dia').value;
+    const selectedJornada= document.getElementById('jornada').value;
+
+    if (selectedHC)      localStorage.setItem('lastSelectedHC', selectedHC);
+    if (selectedDia)     localStorage.setItem('lastDia',        selectedDia);
+    if (selectedJornada) localStorage.setItem('lastJornada',    selectedJornada);
 
     const recordData = {
         id: document.getElementById('record-id').value,
