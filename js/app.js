@@ -1,687 +1,207 @@
-// ═══════════════════════════════════════════════════════════════════
-//  SISTEMA DE CONTROL DE TEMPERATURA Y HUMEDAD
-//  JavaScript Principal - CRUD Operations
-//  Versión: 1.1.0
-// ═══════════════════════════════════════════════════════════════════
-
-// Variables globales
-let SCRIPT_URL = '';
-let currentData = [];
-let historyStack = [];
-let redoStack = [];
-const MAX_HISTORY = 200;
-
-// Inicialización
-document.addEventListener('DOMContentLoaded', function() {
-    SCRIPT_URL = localStorage.getItem('scriptUrl');
-
-    // Limpiar historial viejo (más de 2 días) al iniciar
-    const historialGuardado = JSON.parse(localStorage.getItem('changeHistory') || '[]');
-    const hace2Dias = new Date();
-    hace2Dias.setDate(hace2Dias.getDate() - 2);
-    historyStack = historialGuardado.filter(c => new Date(c.timestamp) >= hace2Dias);
-    localStorage.setItem('changeHistory', JSON.stringify(historyStack));
-
-    if (!SCRIPT_URL) {
-        showConfigSection();
-    } else {
-        showMainContent();
-        loadData();
-    }
-
-    // Auto-actualizar cada 5 minutos
-    setInterval(loadData, 300000);
-});
-
-// Mostrar sección de configuración
-function showConfigSection() {
-    document.getElementById('config-section').style.display = 'block';
-    document.getElementById('main-content').style.display = 'none';
-}
-
-// Mostrar contenido principal
-function showMainContent() {
-    document.getElementById('config-section').style.display = 'none';
-    document.getElementById('main-content').style.display = 'flex';
-}
-
-// Guardar configuración
-function saveConfiguration() {
-    const url = document.getElementById('script-url-input').value.trim();
-
-    if (!url) {
-        showAlert('Por favor ingrese una URL válida', 'warning');
-        return;
-    }
-
-    if (!url.includes('script.google.com') || !url.includes('/exec')) {
-        showAlert('La URL debe ser de Google Apps Script y terminar en /exec', 'error');
-        return;
-    }
-
-    localStorage.setItem('scriptUrl', url);
-    SCRIPT_URL = url;
-
-    showAlert('Configuración guardada exitosamente', 'success');
-
-    setTimeout(() => {
-        showMainContent();
-        loadData();
-    }, 1000);
-}
-
-// Cargar datos
-async function loadData() {
-    showLoading(true);
-
-    try {
-        const result = await callAppsScript('getData');
-
-        if (result.success) {
-            currentData = result.data;
-            renderTable(currentData);
-            populateHCSelect();
-            showAlert(`${currentData.length} registros cargados`, 'success');
-        } else {
-            showAlert('Error al cargar datos: ' + result.message, 'error');
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Control de Temperatura y Humedad</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <style>
+        .font-mono { font-family: 'Courier New', Courier, monospace; font-weight: bold; }
+        .bulk-input { width: 100%; padding: 4px; border: 1px solid var(--primary); border-radius: 4px; }
+        th.sortable { cursor: pointer; transition: background 0.2s; }
+        th.sortable:hover { background-color: #edf2f7 !important; }
+        .actions-container { display: flex; gap: 10px; align-items: center; }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to   { transform: rotate(360deg); }
         }
-    } catch (error) {
-        showAlert('Error de conexión: ' + error.message, 'error');
-        console.error(error);
-    } finally {
-        showLoading(false);
-    }
-}
-
-// Formatear fecha para mostrar
-function formatDisplayDate(dateStr) {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    const day   = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year  = date.getFullYear();
-    return `${day}/${month}/${year}`;
-}
-
-// Abrir modal para agregar
-function openAddModal() {
-    document.getElementById('modal-title').textContent = 'Agregar Nuevo Registro';
-    document.getElementById('data-form').reset();
-    document.getElementById('record-id').value = '';
-
-    const now = new Date(); // ← DECLARADO AQUÍ, una sola vez
-
-    // Fecha y hora actuales
-    document.getElementById('fecha').value = now.toISOString().split('T')[0];
-    document.getElementById('hora').value  = now.toTimeString().slice(0, 5);
-
-    // ── Secuencia HC ──────────────────────────────────────────────
-    const lastHC = localStorage.getItem('lastSelectedHC') || '';
-    const select = document.getElementById('no_hc');
-
-    if (lastHC) {
-        const options   = Array.from(select.options).map(o => o.value).filter(v => v);
-        const lastIndex = options.indexOf(lastHC);
-        const nextHC    = (lastIndex >= 0 && lastIndex < options.length - 1)
-            ? options[lastIndex + 1]
-            : lastHC; // Si ya es el último, queda igual
-        select.value = nextHC;
-    }
-
-    // ── Secuencia Día + Jornada ───────────────────────────────────
-    // Lógica: Día 13 MAÑANA → Día 13 TARDE → Día 14 MAÑANA → ...
-    const lastDia     = parseInt(localStorage.getItem('lastDia')) || now.getDate();
-    const lastJornada = localStorage.getItem('lastJornada') || '';
-
-    let nextDia     = lastDia;
-    let nextJornada = 'MAÑANA';
-
-    if (lastJornada === 'MAÑANA') {
-        // Mismo día, siguiente jornada TARDE
-        nextDia     = lastDia;
-        nextJornada = 'TARDE';
-    } else if (lastJornada === 'TARDE') {
-        // Siguiente día, vuelve a MAÑANA
-        nextDia = lastDia + 1;
-        const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-        if (nextDia > lastDayOfMonth) nextDia = 1;
-        nextJornada = 'MAÑANA';
-    }
-
-    document.getElementById('dia').value     = nextDia;
-    document.getElementById('jornada').value = nextJornada;
-
-    openModal();
-}
-
-// Editar registro
-function editRecord(id) {
-    const record = currentData.find(r => r.id === id);
-    if (!record) return;
-
-    document.getElementById('modal-title').textContent     = 'Editar Registro';
-    document.getElementById('record-id').value             = record.id;
-    document.getElementById('no_hc').value                 = record.no_hc || '';
-    document.getElementById('fecha').value                 = record.fecha;
-    document.getElementById('hora').value                  = record.hora;
-    document.getElementById('jornada').value               = record.jornada || '';
-    document.getElementById('dia').value                   = record.dia;
-    document.getElementById('temperatura').value           = record.temperatura;
-
-    // Limpiar humedad: si viene como 0.56 convertir a 56
-    let humVal = parseFloat(String(record.humedad).replace('%', '').trim());
-    if (!isNaN(humVal) && humVal > 0 && humVal < 1) humVal = Math.round(humVal * 100);
-    document.getElementById('humedad').value = Math.round(humVal) || 0;
-
-    document.getElementById('persona').value               = record.persona;
-    document.getElementById('observaciones').value         = record.observaciones || '';
-
-    openModal();
-}
-
-// Guardar datos (crear o actualizar)
-async function saveData(event) {
-    event.preventDefault();
-
-    const selectedHC      = document.getElementById('no_hc').value;
-    const selectedDia     = document.getElementById('dia').value;
-    const selectedJornada = document.getElementById('jornada').value;
-
-    // Guardar secuencia para el próximo registro
-    if (selectedHC)      localStorage.setItem('lastSelectedHC', selectedHC);
-    if (selectedDia)     localStorage.setItem('lastDia',        selectedDia);
-    if (selectedJornada) localStorage.setItem('lastJornada',    selectedJornada);
-
-    const recordData = {
-        id:            document.getElementById('record-id').value,
-        no_hc:         selectedHC,
-        fecha:         document.getElementById('fecha').value,
-        hora:          document.getElementById('hora').value,
-        jornada:       selectedJornada,
-        dia:           selectedDia,
-        temperatura:   document.getElementById('temperatura').value,
-        humedad:       document.getElementById('humedad').value,
-        persona:       document.getElementById('persona').value,
-        observaciones: document.getElementById('observaciones').value
-    };
-
-    // Spinner en botón guardar
-    const saveBtn       = document.querySelector('#data-form button[type="submit"]');
-    const originalBtnText = saveBtn.innerHTML;
-    saveBtn.disabled    = true;
-    saveBtn.innerHTML   = `
-        <span style="display:inline-flex;align-items:center;gap:8px;">
-            <svg style="animation:spin 1s linear infinite;width:18px;height:18px;" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-            </svg>
-            Guardando...
-        </span>`;
-
-    showLoading(true);
-
-    try {
-        const action = recordData.id ? 'updateData' : 'createData';
-        const result = await callAppsScript(action, recordData);
-
-        if (result.success) {
-            saveToHistory({
-                action:    recordData.id ? 'update' : 'create',
-                data:      recordData,
-                timestamp: new Date().toISOString()
-            });
-
-            showAlert(
-                recordData.id ? 'Registro actualizado exitosamente' : 'Registro creado exitosamente',
-                'success'
-            );
-            closeModal();
-            loadData();
-        } else {
-            showAlert('Error al guardar: ' + result.message, 'error');
-        }
-    } catch (error) {
-        showAlert('Error: ' + error.message, 'error');
-    } finally {
-        saveBtn.disabled  = false;
-        saveBtn.innerHTML = originalBtnText;
-        showLoading(false);
-    }
-}
-
-// Eliminar registro
-async function deleteRecord(id) {
-    if (!confirm('¿Está seguro de eliminar este registro?')) return;
-
-    showLoading(true);
-
-    try {
-        const record = currentData.find(r => r.id === id);
-        const result = await callAppsScript('deleteData', { id: id });
-
-        if (result.success) {
-            saveToHistory({
-                action:    'delete',
-                data:      record,
-                timestamp: new Date().toISOString()
-            });
-
-            showAlert('Registro eliminado exitosamente', 'success');
-            loadData();
-        } else {
-            showAlert('Error al eliminar: ' + result.message, 'error');
-        }
-    } catch (error) {
-        showAlert('Error: ' + error.message, 'error');
-    } finally {
-        showLoading(false);
-    }
-}
-
-// Llamar a Apps Script
-async function callAppsScript(action, data = {}) {
-    if (!SCRIPT_URL) {
-        throw new Error('URL de Apps Script no configurada');
-    }
-
-    const params = new URLSearchParams({ action: action, ...data });
-
-    const response = await fetch(`${SCRIPT_URL}?${params}`, {
-        method:   'GET',
-        redirect: 'follow'
-    });
-
-    if (!response.ok) {
-        throw new Error('Error en la petición: ' + response.status);
-    }
-
-    return await response.json();
-}
-
-// Gestión de Modales
-function openModal() {
-    document.getElementById('data-modal').classList.add('active');
-}
-
-function closeModal() {
-    document.getElementById('data-modal').classList.remove('active');
-    document.getElementById('data-form').reset();
-}
-
-// Historial de cambios
-function saveToHistory(change) {
-    historyStack.push(change);
-
-    // Mantener solo cambios de los últimos 2 días
-    const hace2Dias = new Date();
-    hace2Dias.setDate(hace2Dias.getDate() - 2);
-    historyStack = historyStack.filter(c => new Date(c.timestamp) >= hace2Dias);
-
-    // Límite adicional por seguridad
-    if (historyStack.length > MAX_HISTORY) historyStack.shift();
-
-    redoStack = [];
-    localStorage.setItem('changeHistory', JSON.stringify(historyStack));
-}
-
-function showHistory() {
-    const history = JSON.parse(localStorage.getItem('changeHistory') || '[]');
-
-    if (history.length === 0) {
-        showAlert('No hay cambios en el historial', 'info');
-        return;
-    }
-
-    const historyList = document.getElementById('history-list');
-    historyList.innerHTML = history.slice().reverse().map((change) => `
-        <div class="accordion">
-            <div class="accordion-header">
-                <div>
-                    <strong>${change.action === 'create' ? '➕ Creado' : change.action === 'update' ? '✏️ Actualizado' : '🗑️ Eliminado'}</strong>
-                    <div style="color: #718096; font-size: 0.9em; margin-top: 5px;">
-                        ${new Date(change.timestamp).toLocaleString('es-ES')}
-                    </div>
-                </div>
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                </svg>
+                <h1>Control Temp/Humedad gestion Documental</h1>
             </div>
-            <div class="accordion-content">
-                <div style="padding: 15px; background: white;">
-                    <p><strong>ID:</strong> ${change.data.id || 'N/A'}</p>
-                    <p><strong>No. HC:</strong> ${change.data.no_hc || 'N/A'}</p>
-                    <p><strong>Fecha:</strong> ${change.data.fecha}</p>
-                    <p><strong>Hora:</strong> ${change.data.hora}</p>
-                    <p><strong>Jornada:</strong> ${change.data.jornada}</p>
-                    <p><strong>Día:</strong> ${change.data.dia}</p>
-                    <p><strong>Temperatura:</strong> ${change.data.temperatura}°C</p>
-                    <p><strong>Humedad:</strong> ${change.data.humedad}%</p>
-                    <p><strong>Persona:</strong> ${change.data.persona}</p>
+            <nav>
+                <a class="active" href="index.html">Tabla de Datos</a>
+                <a href="graphics.html">Gráficos</a>
+                <a href="migration.html">Migración</a>
+                <a href="dashboard.html">Dashboard</a>
+            </nav>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Configuration Section -->
+        <div id="config-section" class="card" style="display:none;">
+            <h2>⚙️ Configuración Inicial</h2>
+            <div class="config-box">
+                <label><strong>URL de Apps Script:</strong></label>
+                <p style="color: #856404; margin: 10px 0; font-size: 0.9em;">Ingrese la URL de implementación de Google Apps Script (debe terminar en /exec)</p>
+                <input type="text" id="script-url-input" class="form-control" placeholder="https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec">
+                <button class="btn btn-success" onclick="saveConfiguration()" style="margin-top:15px;">💾 Guardar y Continuar</button>
+            </div>
+        </div>
+
+        <!-- Page Header -->
+        <div class="page-header" id="main-content" style="display:none;">
+            <div>
+                <h2>Tabla de Datos de Temperatura y Humedad</h2>
+                <p style="color: #718096; margin-top: 5px;">Gestione todos los registros y use la edición masiva para cambios rápidos</p>
+            </div>
+            <div class="button-group">
+                <button class="btn btn-success" onclick="openAddModal()">➕ Agregar Datos</button>
+                
+                <div class="actions-container">
+                    <button id="btn-bulk-edit" class="btn btn-warning" onclick="toggleBulkEdit()">✏️ Edición Masiva</button>
+                    <button id="btn-save-bulk" class="btn btn-primary" style="display:none;" onclick="saveBulkChanges()">💾 Guardar Cambios</button>
+                </div>
+
+                <button class="btn btn-outline" onclick="loadData()">🔄 Actualizar</button>
+                <button class="btn btn-warning" onclick="showHistory()">🕐 Histórico</button>
+            </div>
+        </div>
+
+        <!-- Alert Container -->
+        <div id="alert-container"></div>
+
+        <!-- Loading -->
+        <div class="loading" id="loading" style="display:none;">
+            <div class="spinner"></div>
+            <p>Procesando datos...</p>
+        </div>
+
+        <!-- Data Table -->
+        <div class="card" id="table-container" style="display:none;">
+            <div class="table-responsive">
+                <table class="data-table">
+                <thead>
+                    <tr>
+                        <th class="hide-column">ID</th>  <!-- ← NUEVO: columna ID oculta -->
+                        <th class="sortable" onclick="sortTable('no_hc')">No. HC ↕</th>  <!-- ← CAMBIAR 'hc' por 'no_hc' -->
+                        <th class="sortable" onclick="sortTable('fecha')">Fecha ↕</th>
+                        <th>Hora</th>
+                        <th>Jornada</th>
+                        <th class="sortable" onclick="sortTable('dia')">Día ↕</th>
+                        <th class="sortable" onclick="sortTable('temperatura')">Temp (°C) ↕</th>
+                        <th class="sortable" onclick="sortTable('humedad')">Hum (%) ↕</th>
+                        <th>Persona</th>
+                        <th>Observaciones</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+
+
+                    <tbody id="data-tbody">
+                        <tr>
+                            <td colspan="11" style="text-align:center; padding: 40px;">No hay datos disponibles</td>
+
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Add/Edit Data -->
+    <div id="data-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Agregar Nuevo Registro</h3>
+                <button class="close-modal" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="data-form" onsubmit="saveData(event)">
+                    <input type="hidden" id="record-id">
+
+                    <div class="form-group">
+                        <label class="form-label">No. Historia Clínica *</label>
+                    <select id="no_hc" class="form-control" required>
+                        <option value="">-- Seleccione HC --</option>
+                    </select>
+                    </div>
+
+
+                    <div class="form-group">
+                        <label class="form-label">Fecha *</label>
+                        <input type="date" id="fecha" class="form-control" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Hora *</label>
+                        <input type="time" id="hora" class="form-control" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Jornada *</label>
+                        <select id="jornada" class="form-control" required>
+                            <option value="">Seleccionar...</option>
+                            <option value="MAÑANA">MAÑANA</option>
+                            <option value="TARDE">TARDE</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Día *</label>
+                        <input type="number" id="dia" class="form-control" min="1" max="31" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Temperatura (°C) *</label>
+                        <input type="number" id="temperatura" class="form-control" step="0.1" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Humedad (%) *</label>
+                        <input type="number" id="humedad" class="form-control" min="0" max="100" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Persona que Registra *</label>
+                        <input type="text" id="persona" class="form-control" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Observaciones</label>
+                        <textarea id="observaciones" class="form-control" rows="2"></textarea>
+                    </div>
+                    
+                    <div class="button-group" style="margin-top: 20px;">
+                        <button type="submit" class="btn btn-success">💾 Guardar</button>
+                        <button type="button" class="btn btn-outline" onclick="closeModal()">✖ Cancelar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: History -->
+    <div id="history-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Histórico de Cambios</h3>
+                <button class="close-modal" onclick="closeHistoryModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="history-list" class="space-y-3 pr-2" style="max-height: 450px; overflow-y: auto; scrollbar-width: thin;"></div>
+                <div class="button-group" style="margin-top: 20px;">
+                    <button class="btn btn-warning" onclick="undoLastChange()">↶ Deshacer</button>
+                    <button class="btn btn-info" onclick="redoLastChange()">↷ Rehacer</button>
                 </div>
             </div>
         </div>
-    `).join('');
+    </div>
 
-    // Acordeón
-    document.querySelectorAll('.accordion-header').forEach(header => {
-        header.addEventListener('click', function() {
-            this.nextElementSibling.classList.toggle('active');
-        });
-    });
-
-    document.getElementById('history-modal').classList.add('active');
-}
-
-function closeHistoryModal() {
-    document.getElementById('history-modal').classList.remove('active');
-}
-
-async function undoLastChange() {
-    if (historyStack.length === 0) {
-        showAlert('No hay cambios para deshacer', 'warning');
-        return;
-    }
-
-    const lastChange = historyStack.pop();
-    redoStack.push(lastChange);
-    showLoading(true);
-
-    try {
-        if (lastChange.action === 'create') {
-            await callAppsScript('deleteData', { id: lastChange.data.id });
-        } else if (lastChange.action === 'delete') {
-            await callAppsScript('createData', lastChange.data);
-        } else if (lastChange.action === 'update') {
-            await callAppsScript('updateData', lastChange.data);
-        }
-
-        showAlert('Cambio deshecho exitosamente', 'success');
-        localStorage.setItem('changeHistory', JSON.stringify(historyStack));
-        loadData();
-        closeHistoryModal();
-    } catch (error) {
-        showAlert('Error al deshacer: ' + error.message, 'error');
-        historyStack.push(lastChange);
-        redoStack.pop();
-    } finally {
-        showLoading(false);
-    }
-}
-
-async function redoLastChange() {
-    if (redoStack.length === 0) {
-        showAlert('No hay cambios para rehacer', 'warning');
-        return;
-    }
-
-    const change = redoStack.pop();
-    historyStack.push(change);
-    showLoading(true);
-
-    try {
-        if (change.action === 'create') {
-            await callAppsScript('createData', change.data);
-        } else if (change.action === 'delete') {
-            await callAppsScript('deleteData', { id: change.data.id });
-        } else if (change.action === 'update') {
-            await callAppsScript('updateData', change.data);
-        }
-
-        showAlert('Cambio rehecho exitosamente', 'success');
-        localStorage.setItem('changeHistory', JSON.stringify(historyStack));
-        loadData();
-        closeHistoryModal();
-    } catch (error) {
-        showAlert('Error al rehacer: ' + error.message, 'error');
-        redoStack.push(change);
-        historyStack.pop();
-    } finally {
-        showLoading(false);
-    }
-}
-
-// UI Helpers
-function showLoading(show) {
-    document.getElementById('loading').style.display           = show ? 'block' : 'none';
-    document.getElementById('table-container').style.display   = show ? 'none'  : 'block';
-}
-
-function showAlert(message, type = 'info') {
-    const alertContainer = document.getElementById('alert-container');
-
-    const alert = document.createElement('div');
-    alert.className = `alert alert-${type}`;
-    alert.innerHTML = `
-        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-        </svg>
-        <div>
-            <p style="font-weight: 600;">${type.charAt(0).toUpperCase() + type.slice(1)}</p>
-            <p>${message}</p>
-        </div>
-    `;
-
-    alertContainer.appendChild(alert);
-
-    setTimeout(() => {
-        alert.style.animation = 'fadeOut 0.5s';
-        setTimeout(() => alert.remove(), 500);
-    }, 3000);
-}
-
-// Cerrar modal al hacer clic fuera
-window.onclick = function(event) {
-    document.querySelectorAll('.modal').forEach(modal => {
-        if (event.target === modal) modal.classList.remove('active');
-    });
-};
-
-// Atajo de teclado ESC
-document.addEventListener('keydown', function(event) {
-    if (event.key === 'Escape') {
-        document.querySelectorAll('.modal').forEach(modal => modal.classList.remove('active'));
-    }
-});
-
-// === LISTA HC ===
-function populateHCSelect() {
-    const select = document.getElementById('no_hc');
-    if (!select) return;
-
-    // Base fija: HC-01 a HC-62
-    const baseList = [];
-    for (let i = 1; i <= 62; i++) {
-        baseList.push(`HC-${i.toString().padStart(2, '0')}`);
-    }
-
-    // Agregar extras de datos reales
-    if (currentData.length > 0) {
-        const extras = currentData
-            .map(r => r.no_hc)
-            .filter(hc => hc && !baseList.includes(hc));
-        extras.forEach(hc => baseList.push(hc));
-    }
-
-    baseList.sort();
-
-    select.innerHTML = '<option value="">-- Seleccione HC --</option>' +
-        baseList.map(hc => `<option value="${hc}">${hc}</option>`).join('');
-}
-
-// === RENDER TABLE ===
-function renderTable(data) {
-    const tbody = document.getElementById('data-tbody');
-
-    if (!data || data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; padding: 40px;">No hay datos disponibles</td></tr>';
-        document.getElementById('table-container').style.display = 'block';
-        return;
-    }
-
-    tbody.innerHTML = data.map(record => {
-        // Limpiar humedad
-        let hRaw = String(record.humedad || '0').replace('%', '').trim();
-        let hNum = parseFloat(hRaw);
-        if (!isNaN(hNum) && hNum > 0 && hNum < 1) hNum = Math.round(hNum * 100);
-        hNum = Math.round(hNum) || 0;
-
-        // Limpiar temperatura
-        let tRaw = String(record.temperatura || '0').split('°')[0].trim();
-        let tNum = parseFloat(tRaw) || 0;
-
-        return `
-            <tr>
-                <td class="hide-column">${record.id}</td>
-                <td style="font-weight:bold; color:var(--primary);">${record.no_hc || '-'}</td>
-                <td>${formatDisplayDate(record.fecha)}</td>
-                <td>${record.hora}</td>
-                <td><span class="badge badge-${record.jornada === 'MAÑANA' ? 'info' : 'success'}">${record.jornada}</span></td>
-                <td>${record.dia}</td>
-                <td class="font-mono">${tNum.toFixed(1)}°C</td>
-                <td class="font-mono">${hNum}%</td>
-                <td>${record.persona}</td>
-                <td>${record.observaciones || '-'}</td>
-                <td>
-                    <div class="button-group" style="gap:5px;">
-                        <button class="btn btn-primary" onclick="editRecord(${record.id})">✏️</button>
-                        <button class="btn btn-danger"  onclick="deleteRecord(${record.id})">🗑️</button>
-                    </div>
-                </td>
-            </tr>`;
-    }).join('');
-
-    document.getElementById('table-container').style.display = 'block';
-}
-
-// === EDICIÓN MASIVA ===
-let isBulkEditing = false;
-
-function toggleBulkEdit() {
-    isBulkEditing = !isBulkEditing;
-    const btn     = document.getElementById('btn-bulk-edit');
-    const saveBtn = document.getElementById('btn-save-bulk');
-
-    if (isBulkEditing) {
-        btn.innerHTML    = '❌ Cancelar';
-        btn.className    = 'btn btn-danger';
-        saveBtn.style.display = 'inline-block';
-        enableInlineEditing();
-    } else {
-        saveBulkChanges();
-        btn.innerHTML    = '✏️ Edición Masiva';
-        btn.className    = 'btn btn-warning';
-        saveBtn.style.display = 'none';
-    }
-}
-
-function enableInlineEditing() {
-    const rows = document.querySelectorAll('#data-tbody tr');
-    rows.forEach(row => {
-        const id = row.cells[0].textContent.trim();
-        if (!id) return;
-
-        const cells = Array.from(row.cells).slice(1, -1);
-        cells.forEach((cell, idx) => {
-            let value = cell.textContent.replace('°C', '').replace('%', '').trim();
-            if (value === '-') value = '';
-
-            if (idx === 8) {
-                cell.innerHTML = `<textarea class="bulk-input" rows="1">${value}</textarea>`;
-            } else {
-                cell.innerHTML = `<input type="text" class="bulk-input" value="${value}">`;
-            }
-        });
-    });
-}
-
-async function saveBulkChanges() {
-    showLoading(true);
-    const rows    = document.querySelectorAll('#data-tbody tr');
-    const updates = [];
-
-    rows.forEach(row => {
-        const id = row.cells[0].textContent.trim();
-        if (!id) return;
-
-        const inputs = row.querySelectorAll('.bulk-input');
-        if (inputs.length === 0) return;
-
-        let humRaw = inputs[6]?.value?.replace('%', '').trim() || '0';
-        let humNum = parseFloat(humRaw);
-        if (!isNaN(humNum) && humNum > 0 && humNum < 1) humNum *= 100;
-        humNum = Math.round(humNum) || 0;
-
-        const record = {
-            id:            id,
-            no_hc:         inputs[0]?.value || '',
-            fecha:         inputs[1]?.value || '',
-            hora:          inputs[2]?.value || '',
-            jornada:       inputs[3]?.value || '',
-            dia:           inputs[4]?.value || '',
-            temperatura:   parseFloat(inputs[5]?.value) || 0,
-            humedad:       humNum,
-            persona:       inputs[7]?.value || '',
-            observaciones: inputs[8]?.value || ''
-        };
-        updates.push(callAppsScript('updateData', record));
-    });
-
-    try {
-        if (updates.length > 0) await Promise.all(updates);
-        showAlert('✅ Cambios masivos guardados', 'success');
-        loadData();
-    } catch (error) {
-        showAlert('Error: ' + error.message, 'error');
-    } finally {
-        isBulkEditing = false;
-        document.getElementById('btn-bulk-edit').innerHTML    = '✏️ Edición Masiva';
-        document.getElementById('btn-bulk-edit').className    = 'btn btn-warning';
-        document.getElementById('btn-save-bulk').style.display = 'none';
-        showLoading(false);
-    }
-}
-
-// === ORDENAR TABLA ===
-let sortColumn = '';
-let sortAsc    = true;
-
-function sortTable(column) {
-    if (sortColumn === column) {
-        sortAsc = !sortAsc;
-    } else {
-        sortColumn = column;
-        sortAsc    = true;
-    }
-
-    const sorted = [...currentData].sort((a, b) => {
-        let valA = a[column] ?? '';
-        let valB = b[column] ?? '';
-
-        if (['temperatura', 'humedad', 'dia'].includes(column)) {
-            valA = parseFloat(String(valA).replace('%', '')) || 0;
-            valB = parseFloat(String(valB).replace('%', '')) || 0;
-            return sortAsc ? valA - valB : valB - valA;
-        }
-
-        return sortAsc
-            ? String(valA).localeCompare(String(valB), 'es')
-            : String(valB).localeCompare(String(valA), 'es');
-    });
-
-    renderTable(sorted);
-}
-
-// Exportar funciones globales
-window.saveConfiguration  = saveConfiguration;
-window.loadData           = loadData;
-window.openAddModal       = openAddModal;
-window.editRecord         = editRecord;
-window.deleteRecord       = deleteRecord;
-window.saveData           = saveData;
-window.closeModal         = closeModal;
-window.showHistory        = showHistory;
-window.closeHistoryModal  = closeHistoryModal;
-window.undoLastChange     = undoLastChange;
-window.redoLastChange     = redoLastChange;
-window.toggleBulkEdit     = toggleBulkEdit;
-window.saveBulkChanges    = saveBulkChanges;
-window.populateHCSelect   = populateHCSelect;
-window.sortTable          = sortTable;
+    <script src="js/config.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/dashboard.js"></script>
+    <script src="js/graphics.js"></script>
+    <script src="js/migration.js"></script>
+</body>
+</html>
